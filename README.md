@@ -1,4 +1,4 @@
-﻿# thorlabs-power-meter-controller
+# thorlabs-power-meter-controller
 
 Small Python controller for Thorlabs TLPM-compatible optical power meters, intended for use with sensors such as S120C through PM100/PM200/PM400-class consoles.
 

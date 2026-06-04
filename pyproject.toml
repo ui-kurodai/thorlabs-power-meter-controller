@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "thorlabs-power-meter-controller"
 version = "0.1.0"
 description = "Small Python controller for Thorlabs TLPM-compatible optical power meters."
