@@ -1,0 +1,3 @@
+﻿from thorlabs_power_meter_controller import ThorlabsPowerMeterController
+
+print(ThorlabsPowerMeterController.__name__)
