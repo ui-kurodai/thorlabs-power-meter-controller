@@ -32,6 +32,7 @@ class ThorlabsPowerMeterController:
     """Controller for Thorlabs TLPM-compatible power meters."""
 
     default_dll_name = "Thorlabs.TLPM_64.Interop"
+    default_dll_filename = "Thorlabs.TLPM_64.Interop.dll"
 
     def __init__(self, library_path: str | os.PathLike[str] | None = None):
         self.library_path = Path(library_path) if library_path else None
@@ -251,28 +252,80 @@ class ThorlabsPowerMeterController:
         except ImportError as exc:
             raise RuntimeError("pythonnet is required for Thorlabs TLPM control.") from exc
 
-        if library_path is not None:
-            path = str(Path(library_path).resolve())
+        candidate_dirs = cls._candidate_library_dirs(library_path)
+        for directory in candidate_dirs:
+            path = str(directory)
             if path not in sys.path:
                 sys.path.insert(0, path)
         try:
             clr.AddReference(cls.default_dll_name)
         except Exception as first_exc:
-            dll_path = None
-            if library_path is not None:
-                candidate = Path(library_path) / f"{cls.default_dll_name}.dll"
-                if candidate.exists():
-                    dll_path = str(candidate.resolve())
+            dll_path = cls._find_interop_dll(candidate_dirs)
             if dll_path is None:
+                searched = "\n".join(f"- {directory}" for directory in candidate_dirs)
+                if not searched:
+                    searched = "- <no candidate directories>"
                 raise RuntimeError(
-                    "Cannot load Thorlabs.TLPM_64.Interop. Install Thorlabs Optical Power Monitor "
-                    "or pass the folder containing Thorlabs.TLPM_64.Interop.dll."
+                    "Cannot load Thorlabs.TLPM_64.Interop. Install Thorlabs Optical Power Monitor, "
+                    "set THORLABS_TLPM_PATH, or pass the folder containing "
+                    f"{cls.default_dll_filename}.\n\nSearched directories:\n{searched}"
                 ) from first_exc
-            clr.AddReference(dll_path)
+            clr.AddReference(str(dll_path))
 
         from Thorlabs.TLPM_64.Interop import TLPM
 
         return TLPM
+
+    @classmethod
+    def _candidate_library_dirs(cls, library_path: str | os.PathLike[str] | None = None) -> list[Path]:
+        raw_candidates: list[Path] = []
+        if library_path is not None:
+            raw_candidates.append(Path(library_path))
+
+        env_path = os.environ.get("THORLABS_TLPM_PATH")
+        if env_path:
+            raw_candidates.append(Path(env_path))
+
+        for env_name in ("ProgramFiles", "ProgramFiles(x86)"):
+            base = os.environ.get(env_name)
+            if not base:
+                continue
+            base_path = Path(base)
+            raw_candidates.extend(
+                [
+                    base_path / "Thorlabs" / "Optical Power Monitor",
+                    base_path / "Thorlabs" / "Optical Power Monitor" / "Bin",
+                    base_path / "Thorlabs" / "Power Monitor",
+                    base_path / "Thorlabs" / "Power Monitor" / "Bin",
+                    base_path / "IVI Foundation" / "VISA" / "Win64" / "Bin",
+                    base_path / "IVI Foundation" / "VISA" / "WinNT" / "Bin",
+                ]
+            )
+            for parent in (base_path / "Thorlabs", base_path / "IVI Foundation"):
+                if parent.exists():
+                    raw_candidates.extend(path.parent for path in parent.rglob(cls.default_dll_filename))
+
+        seen: set[str] = set()
+        candidates: list[Path] = []
+        for path in raw_candidates:
+            try:
+                resolved = path.resolve()
+            except OSError:
+                resolved = path
+            key = str(resolved).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(resolved)
+        return candidates
+
+    @classmethod
+    def _find_interop_dll(cls, candidate_dirs: list[Path]) -> Path | None:
+        for directory in candidate_dirs:
+            candidate = directory / cls.default_dll_filename
+            if candidate.exists():
+                return candidate.resolve()
+        return None
 
     @staticmethod
     def _clamp(value: float, limits: tuple[float, float]) -> float:
